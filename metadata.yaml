@@ -6,7 +6,7 @@ desc: |
   支持自然语言搜索、Pixiv 标签搜索、可选的画师 ID 随机选图、可选的指定插画 ID 发送，以及用于管理配置和诊断的 Plugin Pages。
 version: 0.1.0
 author: Yumeiro Contributors
-repo: https://github.com/your-name/astrbot_plugin_pixiv_gallery
+repo: https://github.com/Ka-Ga-R1/astrbot_plugin_pixiv_gallery
 astrbot_version: ">=4.17.0"
 support_platforms:
   - aiocqhttp
@@ -18,3 +18,4 @@ tags:
   - illustration
   - image
   - natural-language
+
