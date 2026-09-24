@@ -9,6 +9,7 @@ from typing import Any
 if __package__:
     from .pixiv_gallery.config import Settings, valid_proxy
     from .pixiv_gallery.downloader import ImageDownloader
+    from .pixiv_gallery.lolicon_client import LoliconAPIError, LoliconClient
     from .pixiv_gallery.pixiv_client import PixivAPIError, PixivClient
     from .pixiv_gallery.request_parser import parse_pixiv_request
     from .pixiv_gallery.runtime import (
@@ -24,9 +25,11 @@ if __package__:
         RequestIntent,
         SafetyRejectedError,
     )
+    from .pixiv_gallery.tag_search import normalize_tag_terms, pixiv_search_word
 else:
     from pixiv_gallery.config import Settings, valid_proxy
     from pixiv_gallery.downloader import ImageDownloader
+    from pixiv_gallery.lolicon_client import LoliconAPIError, LoliconClient
     from pixiv_gallery.pixiv_client import PixivAPIError, PixivClient
     from pixiv_gallery.request_parser import parse_pixiv_request
     from pixiv_gallery.runtime import (
@@ -42,6 +45,7 @@ else:
         RequestIntent,
         SafetyRejectedError,
     )
+    from pixiv_gallery.tag_search import normalize_tag_terms, pixiv_search_word
 
 PLUGIN_NAME = "astrbot_plugin_pixiv_gallery"
 ASTRBOT_AVAILABLE = False
@@ -115,6 +119,7 @@ class YumeiroPlugin(Star):
         self.limiter = CooldownLimiter()
         self._client: PixivClient | None = None
         self.downloader = self._make_downloader()
+        self.lolicon_client = self._make_lolicon_client()
         self._tasks: set[asyncio.Task] = set()
         self._register_pages()
 
@@ -144,6 +149,9 @@ class YumeiroPlugin(Star):
             timeout=self.settings.timeout_seconds,
             concurrency=self.settings.download_concurrency,
         )
+
+    def _make_lolicon_client(self) -> LoliconClient:
+        return LoliconClient(timeout=self.settings.timeout_seconds, proxy=self.settings.proxy)
 
     def _register_pages(self) -> None:
         if ASTRBOT_AVAILABLE and not WEB_AVAILABLE:
@@ -181,6 +189,7 @@ class YumeiroPlugin(Star):
         self._save_config_values(normalized.__dict__)
         self.settings = normalized
         self._client = None
+        self.lolicon_client = self._make_lolicon_client()
         self.cache.clear()
         self.cache.ttl_seconds = self.settings.cache_ttl_minutes * 60
         await self.downloader.reconfigure(
@@ -381,6 +390,59 @@ class YumeiroPlugin(Star):
         finally:
             self._sync_rotated_token(client)
 
+    async def _fetch_lolicon_candidate(
+        self,
+        pid: int,
+        uid: int,
+        *,
+        settings: Settings,
+        is_private: bool | None,
+    ):
+        client = self._get_client()
+        try:
+            return await PixivService(
+                CachedPixivClient(client, self.cache), settings
+            ).fetch_lolicon_candidate(
+                pid,
+                uid,
+                is_private=is_private,
+            )
+        finally:
+            self._sync_rotated_token(client)
+
+    async def _fetch_keyword_intent(
+        self,
+        intent: RequestIntent,
+        *,
+        settings: Settings,
+        is_private: bool | None,
+        try_lolicon: bool,
+    ):
+        tags = normalize_tag_terms(intent.keywords)
+        if try_lolicon and tags:
+            try:
+                candidate = await self.lolicon_client.find_random(tags)
+            except LoliconAPIError:
+                candidate = None
+            if candidate is not None:
+                try:
+                    work = await self._fetch_lolicon_candidate(
+                        candidate.pid,
+                        candidate.uid,
+                        settings=settings,
+                        is_private=is_private,
+                    )
+                except PixivAPIError:
+                    work = None
+                if work is not None:
+                    return [work]
+        fallback = replace(
+            intent,
+            keywords=pixiv_search_word(tags, settings.bookmark_threshold),
+            search_target="partial_match_for_tags",
+        )
+        return await self._fetch(fallback, settings=settings, is_private=is_private)
+
     @staticmethod
     def _private_context(event: AstrMessageEvent) -> bool | None:
         method = getattr(event, "is_private_chat", None)
@@ -408,7 +470,9 @@ class YumeiroPlugin(Star):
         self._rollover_stats()
         self.stats["images_sent_today"] += 1
 
-    async def _handle_intent(self, event: AstrMessageEvent, intent: RequestIntent) -> str:
+    async def _handle_intent(
+        self, event: AstrMessageEvent, intent: RequestIntent, *, try_lolicon: bool = False
+    ) -> str:
         settings, downloader = self.settings, self.downloader
         try:
             intent = intent.validated(settings)
@@ -422,9 +486,16 @@ class YumeiroPlugin(Star):
         self._rollover_stats()
         self.stats["requests_today"] += 1
         try:
-            works = await self._fetch(
-                intent, settings=settings, is_private=self._private_context(event)
-            )
+            is_private = self._private_context(event)
+            if intent.illust_id is None and intent.artist_id is None:
+                works = await self._fetch_keyword_intent(
+                    intent,
+                    settings=settings,
+                    is_private=is_private,
+                    try_lolicon=try_lolicon,
+                )
+            else:
+                works = await self._fetch(intent, settings=settings, is_private=is_private)
             if not works:
                 self.stats["last_status"] = "没有找到作品"
                 self._record_activity("Pixiv 搜索无结果", "没有找到符合条件的作品。")
@@ -446,6 +517,22 @@ class YumeiroPlugin(Star):
             message = f"Yumeiro：{exc}"
             self.stats["last_status"] = "内容安全拦截"
             self._record_activity("内容安全拦截", "本次请求未通过内容安全策略。", "warning")
+            return await self._notify(event, message)
+        except PixivAPIError as exc:
+            if intent.illust_id is not None:
+                operation = "插画 ID 查询"
+            elif intent.artist_id is not None:
+                operation = "画师 ID 查询"
+            else:
+                operation = "关键词搜索"
+            status = f"（HTTP {exc.status_code}）" if exc.status_code else "（网络或鉴权响应错误）"
+            message = f"Yumeiro：Pixiv {operation}失败{status}，请检查凭据、网络或 ID。"
+            self.stats["last_status"] = f"{operation}失败 {status}"
+            self._record_activity("Pixiv 请求失败", f"{operation}失败 {status}", "warning")
+            if logger:
+                logger.warning(
+                    "Yumeiro: %s failed %s; response details were suppressed.", operation, status
+                )
             return await self._notify(event, message)
         except Exception:
             self.stats["last_status"] = "请求失败"
@@ -475,7 +562,7 @@ class YumeiroPlugin(Star):
         except ValueError as exc:
             await self._notify(event, f"Yumeiro：{exc}")
             return
-        await self._handle_intent(event, intent)
+        await self._handle_intent(event, intent, try_lolicon=True)
 
     @filter.llm_tool(name="pixiv_search_illustrations")
     async def pixiv_search_tool(
@@ -489,7 +576,7 @@ class YumeiroPlugin(Star):
         """搜索并直接向用户发送 Pixiv 插画，返回真实发送结果；不要重复发送图片。
 
         Args:
-            keywords(string): 角色、主题或场景的 Pixiv 标签关键词，也支持 Pixiv 作品链接；指定 ID 时可省略。
+            keywords(string): 先将用户意图转换为最多两个简洁、常见的日文 Pixiv 标签，以逗号分隔（例如“星空, 青髪”）；支持 Pixiv 作品链接，指定 ID 时可省略。
             count(number): 可选的作品数量，省略时使用插件默认值；总图片页数仍受插件上限约束。
             artist_id(number): 可选的正整数画师 ID，仅在画师随机功能开启时使用。
             illust_id(number): 可选的正整数插画 ID，仅在指定作品功能开启时使用，优先于画师 ID。
@@ -508,7 +595,7 @@ class YumeiroPlugin(Star):
             artist_id if artist_id is not None else parsed.artist_id,
             illust_id if illust_id is not None else parsed.illust_id,
         )
-        return await self._handle_intent(event, intent)
+        return await self._handle_intent(event, intent, try_lolicon=True)
 
     async def terminate(self):
         current = asyncio.current_task()

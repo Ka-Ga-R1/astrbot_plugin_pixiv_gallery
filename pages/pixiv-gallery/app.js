@@ -183,6 +183,10 @@ function buildSavePayload() {
       if (token) payload.refresh_token = token;
     } else if (element.type === 'checkbox') {
       payload[key] = element.checked;
+    } else if (element.dataset.valueType === 'number') {
+      const value = Number(element.value);
+      if (!Number.isInteger(value)) throw new Error(`${key} 须选择有效整数`);
+      payload[key] = value;
     } else if (element.type === 'number') {
       const value = Number(element.value);
       if (!element.value.trim() || !Number.isInteger(value) || value < Number(element.min) || value > Number(element.max)) {

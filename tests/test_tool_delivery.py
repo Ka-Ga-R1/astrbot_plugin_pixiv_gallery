@@ -72,6 +72,8 @@ class FakeClient:
 
     async def user_illustrations(self, user_id):
         self.calls.append(user_id)
+        if self.error:
+            raise self.error
         return list(self.works)
 
     async def illustration_detail(self, illust_id):
@@ -82,7 +84,11 @@ class FakeClient:
 class FakeDownloader:
     temporary_directory = staticmethod(lambda: tempfile.TemporaryDirectory(prefix="yumeiro-test-"))
 
+    def __init__(self):
+        self.urls = []
+
     async def download(self, url, target):
+        self.urls.append(url)
         target.write_bytes(b"test-image")
         return target
 
@@ -93,6 +99,7 @@ def make_plugin(**settings):
     )
     plugin._client = FakeClient()
     plugin.downloader = FakeDownloader()
+    plugin.lolicon_client = FakeLolicon(candidate=None)
     return plugin
 
 
@@ -224,10 +231,12 @@ def test_cooldown_is_per_session_and_user_and_prevents_second_fetch():
 def test_command_and_tool_use_same_delivery_path_and_configured_default():
     async def check():
         plugin, event = make_plugin(default_count=2), RecordingEvent()
+        plugin.lolicon_client = FakeLolicon(candidate=None)
         event.message_str = "pixiv 星空"
         await plugin.pixiv_command(event)
         assert len(event.paths) == 2
-        assert plugin._client.calls[0][0] == "星空"
+        assert plugin.lolicon_client.calls[0] == ["星空"]
+        assert plugin._client.calls[0][0] == "星空 100users入り"
 
     run(check())
 
@@ -345,8 +354,191 @@ def test_successful_images_are_counted_even_if_later_send_is_cancelled():
 def test_malformed_illustration_id_is_reported_without_searching(keywords):
     async def check():
         plugin, event = make_plugin(), RecordingEvent()
-        result = await plugin.pixiv_search_tool(event, keywords="illustration id abc")
+        result = await plugin.pixiv_search_tool(event, keywords=keywords)
         assert "ID" in result
         assert not plugin._client.calls
+
+    run(check())
+
+
+@pytest.mark.parametrize(
+    "arguments,expected_call",
+    [
+        ({"artist_id": 1893126}, 1893126),
+        ({"illust_id": 128997681}, 128997681),
+    ],
+)
+def test_supplied_pixiv_ids_use_their_matching_endpoint_without_keyword_search(
+    arguments, expected_call
+):
+    async def check():
+        plugin = make_plugin(enable_artist_random=True, enable_illust_id_send=True)
+        event = RecordingEvent()
+        result = await plugin.pixiv_search_tool(event, keywords="", count=2, **arguments)
+        assert result
+        assert plugin._client.calls == [expected_call]
+        assert len(event.paths) == (2 if "artist_id" in arguments else 1)
+
+    run(check())
+
+
+def test_id_api_failure_reports_safe_status_and_operation():
+    async def check():
+        plugin, event = make_plugin(enable_artist_random=True), RecordingEvent()
+        plugin._client.error = PixivAPIError("private response must not escape", status_code=400)
+        result = await plugin.pixiv_search_tool(event, keywords="", artist_id=1893126)
+        assert "400" in result
+        assert "画师" in result or "artist" in result.lower()
+        assert "private response" not in result
+
+    run(check())
+
+
+class FakeLolicon:
+    def __init__(self, candidate=None, error=None):
+        self.candidate = candidate
+        self.error = error
+        self.calls = []
+
+    async def find_random(self, tags):
+        self.calls.append(tags)
+        if self.error:
+            raise self.error
+        return self.candidate
+
+
+def test_lolicon_hit_uses_pixiv_detail_and_never_searches_or_downloads_lolicon_url():
+    async def check():
+        from pixiv_gallery.lolicon_client import LoliconCandidate
+
+        work = Illustration(
+            id=128997681,
+            user_id=1893126,
+            image_urls=["https://i.pximg.net/img-original/128997681.jpg"],
+        )
+        plugin = make_plugin(bookmark_threshold=500)
+        plugin._client = FakeClient([work])
+        plugin.lolicon_client = FakeLolicon(LoliconCandidate(uid=1893126, pid=128997681))
+        event = RecordingEvent()
+        result = await plugin.pixiv_search_tool(event, keywords="星空, 青髪", count=2)
+        assert result
+        assert plugin.lolicon_client.calls[0] == ["星空", "青髪"]
+        assert plugin._client.calls == [128997681]
+        assert len(event.paths) == 1
+        assert plugin.downloader.urls == ["https://i.pximg.net/img-original/128997681.jpg"]
+
+    run(check())
+
+
+@pytest.mark.parametrize("mode", ["empty", "error", "pixiv_mismatch"])
+def test_lolicon_empty_or_failure_falls_back_to_same_pixiv_tags(mode):
+    async def check():
+        from pixiv_gallery.lolicon_client import LoliconAPIError, LoliconCandidate
+
+        plugin = make_plugin(bookmark_threshold=1000)
+        if mode == "pixiv_mismatch":
+            plugin._client.works[0].user_id = 123
+            plugin.lolicon_client = FakeLolicon(LoliconCandidate(uid=1893126, pid=12345))
+        elif mode == "error":
+            plugin.lolicon_client = FakeLolicon(error=LoliconAPIError("safe"))
+        else:
+            plugin.lolicon_client = FakeLolicon(candidate=None)
+        event = RecordingEvent()
+        await plugin.pixiv_search_tool(event, keywords="星空, 青髪", count=1)
+        expected = [("星空 青髪 1000users入り", "partial_match_for_tags")]
+        if mode == "pixiv_mismatch":
+            expected.insert(0, 12345)
+        assert plugin._client.calls == expected
+        assert len(event.paths) == 1
+
+    run(check())
+
+
+def test_explicit_ids_bypass_lolicon():
+    async def check():
+        plugin = make_plugin(enable_artist_random=True, enable_illust_id_send=True)
+        plugin.lolicon_client = FakeLolicon()
+        await plugin.pixiv_search_tool(RecordingEvent(), keywords="", artist_id=1893126)
+        assert plugin.lolicon_client.calls == []
+        assert plugin._client.calls == [1893126]
+
+    run(check())
+
+
+def test_llm_tool_contract_requires_japanese_pixiv_tags():
+    doc = main.YumeiroPlugin.pixiv_search_tool.__doc__ or ""
+    assert "日文 Pixiv 标签" in doc
+    assert "以逗号分隔" in doc
+
+
+def test_filtered_lolicon_candidate_is_never_sent_and_pixiv_fallback_rechecks_safety():
+    async def check():
+        from pixiv_gallery.lolicon_client import LoliconCandidate
+
+        plugin = make_plugin()
+        plugin._client.works[0].id = 128997681
+        plugin._client.works[0].user_id = 1893126
+        for work in plugin._client.works:
+            work.x_restrict = 1
+        plugin.lolicon_client = FakeLolicon(LoliconCandidate(uid=1893126, pid=128997681))
+        event = RecordingEvent()
+        result = await plugin.pixiv_search_tool(event, keywords="星空")
+        assert "安全" in result
+        assert plugin._client.calls == [128997681, ("星空 100users入り", "partial_match_for_tags")]
+        assert not event.paths
+
+    run(check())
+
+
+def test_pixiv_fallback_forces_tag_search_even_if_configured_for_title_caption():
+    async def check():
+        plugin = make_plugin(search_target="title_and_caption")
+        plugin.lolicon_client = FakeLolicon(candidate=None)
+        await plugin.pixiv_search_tool(RecordingEvent(), keywords="星空, 青髪")
+        assert plugin._client.calls == [("星空 青髪 100users入り", "partial_match_for_tags")]
+
+    run(check())
+
+
+def test_config_schema_publishes_exact_bookmark_tiers():
+    import json
+    from pathlib import Path
+
+    schema = json.loads(
+        (Path(__file__).parents[1] / "_conf_schema.json").read_text(encoding="utf-8")
+    )
+    assert schema["bookmark_threshold"]["default"] == 100
+    assert schema["bookmark_threshold"]["options"] == [100, 500, 1000, 5000, 10000, 50000, 100000]
+
+
+def test_lolicon_candidate_without_bookmark_metadata_is_still_sent():
+    async def check():
+        from pixiv_gallery.lolicon_client import LoliconCandidate
+
+        work = Illustration(
+            id=128997681,
+            user_id=1893126,
+            image_urls=["https://i.pximg.net/img-original/128997681.jpg"],
+        )
+        plugin = make_plugin(bookmark_threshold=500)
+        plugin._client = FakeClient([work])
+        plugin.lolicon_client = FakeLolicon(LoliconCandidate(uid=1893126, pid=128997681))
+        event = RecordingEvent()
+        await plugin.pixiv_search_tool(event, keywords="星空", count=1)
+        assert plugin._client.calls == [128997681]
+        assert len(event.paths) == 1
+
+    run(check())
+
+
+def test_pixiv_command_explicit_artist_id_still_bypasses_lolicon():
+    async def check():
+        plugin = make_plugin(enable_artist_random=True)
+        plugin.lolicon_client = FakeLolicon()
+        event = RecordingEvent()
+        event.message_str = "/pixiv artist 1893126"
+        await plugin.pixiv_command(event)
+        assert plugin.lolicon_client.calls == []
+        assert plugin._client.calls == [1893126]
 
     run(check())

@@ -21,7 +21,7 @@ const publicSettings = {
   proxy: 'http://127.0.0.1:7890', timeout_seconds: 35, default_count: 4, max_count: 8,
   enable_natural_language_tool: true, enable_fallback_command: true,
   enable_artist_random: true, enable_illust_id_send: true,
-  search_target: 'title_and_caption', send_all_pages: true,
+  search_target: 'title_and_caption', bookmark_threshold: 100, send_all_pages: true,
   show_work_metadata: true, show_pixiv_link: true,
   filter_r18: true, filter_r18g: true, reject_when_safety_check_failed: true,
   allow_private_r18: false, allow_group_r18: false,
@@ -186,6 +186,7 @@ test('all settings hydrate and save typed values while preserving existing optio
   await control(page, 'default_count').fill('6');
   await control(page, 'max_count').fill('9');
   await control(page, 'search_target').selectOption('exact_match_for_tags');
+  await control(page, 'bookmark_threshold').selectOption('5000');
   await control(page, 'send_all_pages').uncheck();
   await control(page, 'show_pixiv_link').uncheck();
   await control(page, 'show_work_metadata').uncheck();
@@ -198,7 +199,7 @@ test('all settings hydrate and save typed values while preserving existing optio
     proxy: 'http://127.0.0.1:7890', timeout_seconds: 35, default_count: 6, max_count: 9,
     enable_natural_language_tool: true, enable_fallback_command: true,
     enable_artist_random: true, enable_illust_id_send: true,
-    search_target: 'exact_match_for_tags', send_all_pages: false,
+    search_target: 'exact_match_for_tags', bookmark_threshold: 5000, send_all_pages: false,
     show_work_metadata: false, show_pixiv_link: false,
     filter_r18: true, filter_r18g: true, reject_when_safety_check_failed: false,
     allow_private_r18: true, allow_group_r18: true,

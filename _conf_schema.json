@@ -61,6 +61,20 @@
       "title_and_caption"
     ]
   },
+  "bookmark_threshold": {
+    "description": "Pixiv 搜索强制收藏数标签门槛",
+    "type": "int",
+    "default": 100,
+    "options": [
+      100,
+      500,
+      1000,
+      5000,
+      10000,
+      50000,
+      100000
+    ]
+  },
   "send_all_pages": {
     "description": "多图作品是否发送全部页面",
     "type": "bool",

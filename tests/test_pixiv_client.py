@@ -848,3 +848,33 @@ def test_unreasonably_long_server_expiry_is_bounded(monkeypatch):
         assert len(calls) == 2
 
     asyncio.run(run())
+
+
+def test_supplied_artist_and_illustration_ids_reach_expected_pixiv_endpoints():
+    calls = []
+
+    async def transport(method, url, *, headers=None, params=None, data=None):
+        calls.append((method, url, params))
+        if url.endswith("/auth/token"):
+            return token_payload()
+        if url.endswith("/v1/user/illusts"):
+            return {"illusts": [illust(128997681, user={"id": 1893126, "name": "Artist"})]}
+        if url.endswith("/v1/illust/detail"):
+            return {"illust": illust(128997681, user={"id": 1893126, "name": "Artist"})}
+        raise AssertionError(url)
+
+    async def run():
+        client = PixivClient("refresh", transport=transport)
+        artist_works = await client.user_illustrations(1893126)
+        detail = await client.illustration_detail(128997681)
+        assert artist_works[0].user_id == 1893126
+        assert artist_works[0].id == 128997681
+        assert artist_works[0].image_urls == ["https://i.pximg.net/img-original/128997681.jpg"]
+        assert detail.id == 128997681
+        assert detail.user_id == 1893126
+        user_call = next(call for call in calls if call[1].endswith("/v1/user/illusts"))
+        detail_call = next(call for call in calls if call[1].endswith("/v1/illust/detail"))
+        assert user_call[2]["user_id"] == 1893126
+        assert detail_call[2]["illust_id"] == 128997681
+
+    asyncio.run(run())

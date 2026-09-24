@@ -7,13 +7,13 @@ ROOT = Path(__file__).parents[1]
 
 def test_release_version_and_runtime_dependency_boundary():
     metadata = (ROOT / "metadata.yaml").read_text(encoding="utf-8")
-    assert "version: 0.1.2" in metadata
-    assert "0.1.2" in (ROOT / "pages/pixiv-gallery/index.html").read_text(encoding="utf-8")
+    assert "version: 0.1.3" in metadata
+    assert "0.1.3" in (ROOT / "pages/pixiv-gallery/index.html").read_text(encoding="utf-8")
     runtime = (ROOT / "requirements.txt").read_text(encoding="utf-8")
     assert "httpx" in runtime
     assert "pytest" not in runtime
     assert "pytest" in (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
-    assert "0.1.2" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "0.1.3" in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
 
 def test_production_python_has_python310_compatible_syntax():

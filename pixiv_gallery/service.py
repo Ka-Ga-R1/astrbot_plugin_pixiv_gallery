@@ -90,3 +90,20 @@ class PixivService:
         if intent.illust_id is None and intent.artist_id is not None:
             self.rng.shuffle(safe)
         return safe[: intent.count]
+
+    async def fetch_lolicon_candidate(
+        self,
+        illust_id: int,
+        expected_user_id: int,
+        *,
+        is_private: bool | None = None,
+    ) -> Illustration | None:
+        """Resolve Lolicon IDs through Pixiv, verify author identity, and reapply safety."""
+        illust_id = positive_integer(illust_id, "插画 ID")
+        expected_user_id = positive_integer(expected_user_id, "画师 ID")
+        work = await self.client.illustration_detail(illust_id)
+        if work.id != illust_id or work.user_id != expected_user_id or not work.image_urls:
+            return None
+        if not policy_allows(work, self.settings, is_private=is_private):
+            return None
+        return work

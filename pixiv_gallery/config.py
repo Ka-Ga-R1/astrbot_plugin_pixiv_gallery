@@ -6,6 +6,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 SEARCH_TARGETS = {"partial_match_for_tags", "exact_match_for_tags", "title_and_caption"}
+BOOKMARK_THRESHOLDS = (100, 500, 1000, 5000, 10000, 50000, 100000)
 
 
 def as_bool(value: Any, default: bool) -> bool:
@@ -50,6 +51,7 @@ class Settings:
     enable_artist_random: bool = False
     enable_illust_id_send: bool = False
     search_target: str = "partial_match_for_tags"
+    bookmark_threshold: int = 100
     send_all_pages: bool = True
     show_work_metadata: bool = True
     show_pixiv_link: bool = True
@@ -80,6 +82,14 @@ class Settings:
             value = values.get(field.name, field.default)
             if isinstance(field.default, bool):
                 normalized[field.name] = as_bool(value, field.default)
+            elif field.name == "bookmark_threshold":
+                try:
+                    threshold = int(value) if not isinstance(value, bool) else field.default
+                except (TypeError, ValueError, OverflowError):
+                    threshold = field.default
+                normalized[field.name] = (
+                    threshold if threshold in BOOKMARK_THRESHOLDS else field.default
+                )
             elif field.name in bounds:
                 try:
                     number = int(value) if not isinstance(value, bool) else field.default

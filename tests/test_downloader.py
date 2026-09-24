@@ -101,7 +101,7 @@ def test_download_concurrency_limit_is_global_to_downloader_and_timeout_applies(
         async def handler(request):
             nonlocal active, peak
             assert request.extensions["timeout"]["read"] == 7
-            assert request.headers["referer"].startswith("https://")
+            assert request.headers["referer"] == "https://www.pixiv.net/"
             active += 1
             peak = max(peak, active)
             await asyncio.sleep(0.01)
@@ -128,3 +128,22 @@ def test_download_concurrency_limit_is_global_to_downloader_and_timeout_applies(
 def test_downloader_rejects_even_empty_userinfo():
     with pytest.raises(DownloadError):
         ImageDownloader().validate_url("https://@i.pximg.net/a.jpg")
+
+
+def test_original_pixiv_image_request_uses_official_referer(tmp_path):
+    observed = []
+
+    def handler(request):
+        observed.append((str(request.url), request.headers.get("referer")))
+        return httpx.Response(
+            200, headers={"content-type": "image/jpeg"}, content=b"\xff\xd8\xfforiginal"
+        )
+
+    async def check():
+        original = "https://i.pximg.net/img-original/2026/09/24/128997681_p0.jpg"
+        target = tmp_path / "original.jpg"
+        await ImageDownloader(transport=httpx.MockTransport(handler)).download(original, target)
+        assert observed == [(original, "https://www.pixiv.net/")]
+        assert target.read_bytes() == b"\xff\xd8\xfforiginal"
+
+    asyncio.run(check())

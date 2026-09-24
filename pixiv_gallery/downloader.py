@@ -119,7 +119,7 @@ class ImageDownloader:
                             "GET",
                             url,
                             headers={
-                                "Referer": "https://app-api.pixiv.net/",
+                                "Referer": "https://www.pixiv.net/",
                                 "User-Agent": "Mozilla/5.0",
                             },
                         ) as response:

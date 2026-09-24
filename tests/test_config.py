@@ -1,3 +1,5 @@
+import pytest
+
 from pixiv_gallery.config import Settings
 
 
@@ -55,3 +57,24 @@ def test_nonfinite_or_unhashable_configuration_is_normalized_without_crashing():
     )
     assert settings.timeout_seconds == 20
     assert settings.search_target == "partial_match_for_tags"
+
+
+@pytest.mark.parametrize("threshold", [100, 500, 1000, 5000, 10000, 50000, 100000])
+def test_bookmark_threshold_accepts_only_supported_pixiv_tiers(threshold):
+    settings = Settings.from_mapping({"bookmark_threshold": str(threshold)})
+    assert settings.bookmark_threshold == threshold
+
+
+def test_bookmark_threshold_defaults_and_invalid_values_fall_back_to_lowest_tier():
+    assert Settings.from_mapping({}).bookmark_threshold == 100
+    assert Settings.from_mapping({"bookmark_threshold": 200}).bookmark_threshold == 100
+    assert Settings.from_mapping({"bookmark_threshold": "invalid"}).bookmark_threshold == 100
+
+
+def test_bookmark_tag_is_always_present_exactly_once_in_pixiv_search_word():
+    from pixiv_gallery.tag_search import bookmark_tag, normalize_tag_terms, pixiv_search_word
+
+    tags = normalize_tag_terms("星空, 青髪, 星空")
+    assert tags == ["星空", "青髪"]
+    assert bookmark_tag(10000) == "10000users入り"
+    assert pixiv_search_word(["星空", "100users入り"], 100) == "星空 100users入り"

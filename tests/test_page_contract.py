@@ -35,6 +35,7 @@ SETTINGS = {
     "enable_artist_random": "checkbox",
     "enable_illust_id_send": "checkbox",
     "search_target": "select",
+    "bookmark_threshold": "select",
     "send_all_pages": "checkbox",
     "show_work_metadata": "checkbox",
     "show_pixiv_link": "checkbox",
@@ -141,7 +142,18 @@ def test_page_no_longer_disclaims_implemented_settings():
         assert obsolete not in text
 
 
-def test_ui_release_version_is_0_1_2():
+def test_ui_release_version_is_0_1_3():
     # Metadata is owned and checked by the release coordinator, not this UI task.
-    assert "v0.1.2" in " ".join(PAGE.text)
-    assert "v0.1.1" not in " ".join(PAGE.text)
+    assert "v0.1.3" in " ".join(PAGE.text)
+    assert "v0.1.2" not in " ".join(PAGE.text)
+
+
+def test_bookmark_threshold_select_offers_only_supported_tiers():
+    tag, attrs = setting("bookmark_threshold")
+    assert tag == "select"
+    assert attrs.get("data-value-type") == "number"
+    snippet = HTML.split('id="bookmark-threshold"', 1)[1].split("</select>", 1)[0]
+    import re
+
+    values = set(re.findall(r'<option value="(\d+)">', snippet))
+    assert values == {"100", "500", "1000", "5000", "10000", "50000", "100000"}

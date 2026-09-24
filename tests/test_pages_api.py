@@ -295,3 +295,17 @@ def test_settings_save_preserves_global_download_limit_during_active_request(mon
         assert peak == 1
 
     awaitable(check())
+
+
+def test_bookmark_threshold_round_trips_through_public_page_settings(monkeypatch):
+    plugin = main.YumeiroPlugin(SimpleNamespace(), {"bookmark_threshold": 5000})
+    assert awaitable(plugin.page_settings())["bookmark_threshold"] == 5000
+
+    async def payload(default=None):
+        return {"bookmark_threshold": 10000}
+
+    monkeypatch.setattr(main, "request", SimpleNamespace(json=payload))
+    result = awaitable(plugin.page_save_settings())
+    assert result["saved"] is True
+    assert result["bookmark_threshold"] == 10000
+    assert plugin.config["bookmark_threshold"] == 10000
