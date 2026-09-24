@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +72,8 @@ class YumeiroPlugin(Star):
             "images_sent_today": 0,
             "last_status": "未运行",
             "activities": [],
+            "last_saved_at": None,
+            "last_connection_test_at": None,
         }
         self._client: PixivClient | None = None
         self.downloader = ImageDownloader(
@@ -78,6 +81,15 @@ class YumeiroPlugin(Star):
             self.settings.proxy,
         )
         self._register_pages()
+
+    def _record_activity(self, title: str, detail: str, kind: str = "") -> None:
+        self.stats["activities"].append({
+            "title": title,
+            "detail": detail,
+            "kind": kind,
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+        self.stats["activities"] = self.stats["activities"][-20:]
 
     def _register_pages(self) -> None:
         routes = [
@@ -109,7 +121,12 @@ class YumeiroPlugin(Star):
         return normalized
 
     async def page_settings(self):
-        return json_response(self.settings.public_dict())
+        payload = self.settings.public_dict()
+        payload.update({
+            "last_saved_at": self.stats["last_saved_at"],
+            "last_connection_test_at": self.stats["last_connection_test_at"],
+        })
+        return json_response(payload)
 
     async def page_save_settings(self):
         payload = await request.json(default={})
@@ -120,7 +137,10 @@ class YumeiroPlugin(Star):
         if "refresh_token" in payload:
             updates["refresh_token"] = str(payload.get("refresh_token") or "")
         self._persist(updates)
-        return json_response({"saved": True, **self.settings.public_dict()})
+        saved_at = datetime.now(timezone.utc).isoformat()
+        self.stats["last_saved_at"] = saved_at
+        self._record_activity("设置已保存", "插件配置已写入 AstrBot。", "success")
+        return json_response({"saved": True, "message": "设置已保存", "saved_at": saved_at, "last_saved_at": saved_at, **self.settings.public_dict()})
 
     def _get_client(self) -> PixivClient:
         if self._client is None:
@@ -131,25 +151,48 @@ class YumeiroPlugin(Star):
             )
         return self._client
 
+    def _sync_rotated_token(self, client: Any) -> None:
+        rotated_token = str(getattr(client, "refresh_token", "") or "").strip()
+        if rotated_token and rotated_token != self.settings.refresh_token:
+            self._persist({"refresh_token": rotated_token})
+
     async def page_test_connection(self):
+        tested_at = datetime.now(timezone.utc).isoformat()
+        self.stats["last_connection_test_at"] = tested_at
         try:
-            await self._get_client().authenticate()
+            client = self._get_client()
+            await client.authenticate()
+            self._sync_rotated_token(client)
             self.stats["last_status"] = "连接成功"
-            return json_response({"ok": True, "message": "Pixiv 连接测试通过"})
-        except Exception as exc:
+            self._record_activity("Pixiv 连接验证成功", "Refresh Token 验证通过。", "success")
+            return json_response({"ok": True, "message": "Pixiv 连接测试通过", "tested_at": tested_at})
+        except Exception:
             self.stats["last_status"] = "连接失败"
-            return error_response(f"Pixiv 连接失败：{exc}", status_code=502)
+            self._record_activity("Pixiv 连接验证失败", "Pixiv 鉴权或网络请求失败。", "warning")
+            return error_response("Pixiv 连接失败：请检查 Refresh Token、代理或网络设置", status_code=502)
 
     async def page_clear_cache(self):
-        return json_response({"cleared": True, "message": "缓存已清理"})
+        return json_response({"cleared": False, "message": "当前版本未启用应用层缓存，无需清理"})
 
     async def page_diagnostics(self):
-        return json_response(
+        checks = [
             {
-                "passed": ["pixiv_api", "proxy", "image_download", "message_chain"],
+                "key": "pixiv_api",
                 "ok": bool(self.settings.refresh_token),
-            }
-        )
+                "status": "fail" if not self.settings.refresh_token else "not_run",
+                "message": "未配置 Refresh Token" if not self.settings.refresh_token else "已配置，尚未执行连接测试",
+            },
+            {
+                "key": "proxy",
+                "ok": False,
+                "status": "not_run",
+                "message": "已配置代理，尚未执行网络探测" if self.settings.proxy else "未配置代理，尚未执行网络探测",
+            },
+            {"key": "image_download", "ok": False, "status": "not_run", "message": "尚未执行实际图片下载测试"},
+            {"key": "message_chain", "ok": False, "status": "not_run", "message": "尚未执行实际消息发送测试"},
+        ]
+        passed = [check["key"] for check in checks if check["status"] == "pass"]
+        return json_response({"checks": checks, "passed": passed, "total": len(checks), "ok": len(passed) == len(checks)})
 
     async def page_stats(self):
         return json_response(self.stats)
@@ -162,6 +205,7 @@ class YumeiroPlugin(Star):
             yield event.plain_result("没有找到符合条件的 Pixiv 作品。")
             return
         self.stats["requests_today"] += 1
+        self._record_activity("处理 Pixiv 请求", f"找到 {len(works)} 张作品。", "success")
         if self.settings.show_work_metadata:
             yield event.plain_result(
                 build_text(

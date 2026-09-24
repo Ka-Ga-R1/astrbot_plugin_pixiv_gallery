@@ -15,3 +15,18 @@ def test_settings_normalize_bounds_and_proxy():
     assert settings.max_count == 20
     assert settings.download_concurrency == 1
     assert settings.proxy == ""
+from pixiv_gallery.config import Settings
+
+
+def test_settings_parse_boolean_strings_safely():
+    settings = Settings.from_mapping({
+        "enable_natural_language_tool": "false",
+        "enable_fallback_command": "0",
+        "filter_r18": "true",
+        "allow_group_r18": "1",
+    })
+
+    assert settings.enable_natural_language_tool is False
+    assert settings.enable_fallback_command is False
+    assert settings.filter_r18 is True
+    assert settings.allow_group_r18 is True

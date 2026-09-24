@@ -4,7 +4,7 @@ short_desc: 用自然语言发现并发送 Pixiv 插画
 desc: |
   Yumeiro 是一个面向 AstrBot 的 Pixiv 插画发现与发送插件。
   支持自然语言搜索、Pixiv 标签搜索、可选的画师 ID 随机选图、可选的指定插画 ID 发送，以及用于管理配置和诊断的 Plugin Pages。
-version: 0.1.0
+version: 0.1.1
 author: Yumeiro Contributors
 repo: https://github.com/Ka-Ga-R1/astrbot_plugin_pixiv_gallery
 astrbot_version: ">=4.17.0"
