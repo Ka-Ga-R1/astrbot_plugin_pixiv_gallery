@@ -1,0 +1,132 @@
+{
+  "refresh_token": {
+    "description": "Pixiv Refresh Token（敏感）",
+    "type": "string",
+    "secret": true,
+    "default": ""
+  },
+  "proxy": {
+    "description": "HTTP 代理地址，可选",
+    "type": "string",
+    "default": ""
+  },
+  "timeout_seconds": {
+    "description": "Pixiv 请求超时（秒）",
+    "type": "int",
+    "default": 20,
+    "min": 5,
+    "max": 120
+  },
+  "default_count": {
+    "description": "默认发送数量",
+    "type": "int",
+    "default": 5,
+    "min": 1,
+    "max": 10
+  },
+  "max_count": {
+    "description": "单次最大图片数量",
+    "type": "int",
+    "default": 10,
+    "min": 1,
+    "max": 20
+  },
+  "enable_natural_language_tool": {
+    "description": "启用自然语言 Pixiv 工具",
+    "type": "bool",
+    "default": true
+  },
+  "enable_fallback_command": {
+    "description": "启用 /pixiv 备用命令",
+    "type": "bool",
+    "default": true
+  },
+  "enable_artist_random": {
+    "description": "enable artist random",
+    "type": "bool",
+    "default": false
+  },
+  "enable_illust_id_send": {
+    "description": "enable illust id send",
+    "type": "bool",
+    "default": false
+  },
+  "search_target": {
+    "description": "默认搜索范围",
+    "type": "string",
+    "default": "partial_match_for_tags",
+    "options": [
+      "partial_match_for_tags",
+      "exact_match_for_tags",
+      "title_and_caption"
+    ]
+  },
+  "send_all_pages": {
+    "description": "多图作品是否发送全部页面",
+    "type": "bool",
+    "default": true
+  },
+  "show_work_metadata": {
+    "description": "发送图片时附带作品信息",
+    "type": "bool",
+    "default": true
+  },
+  "show_pixiv_link": {
+    "description": "发送 Pixiv 作品链接",
+    "type": "bool",
+    "default": true
+  },
+  "filter_r18": {
+    "description": "过滤 R-18 作品",
+    "type": "bool",
+    "default": true
+  },
+  "filter_r18g": {
+    "description": "过滤 R-18G 作品",
+    "type": "bool",
+    "default": true
+  },
+  "reject_when_safety_check_failed": {
+    "description": "安全检查失败时拒绝发送",
+    "type": "bool",
+    "default": true
+  },
+  "allow_private_r18": {
+    "description": "允许私聊请求成人内容",
+    "type": "bool",
+    "default": false
+  },
+  "allow_group_r18": {
+    "description": "允许群聊请求成人内容",
+    "type": "bool",
+    "default": false
+  },
+  "cache_ttl_minutes": {
+    "description": "缓存有效期（分钟）",
+    "type": "int",
+    "default": 30,
+    "min": 1,
+    "max": 1440
+  },
+  "max_file_size_mb": {
+    "description": "单文件最大大小（MB）",
+    "type": "int",
+    "default": 12,
+    "min": 1,
+    "max": 50
+  },
+  "download_concurrency": {
+    "description": "并发下载数量",
+    "type": "int",
+    "default": 3,
+    "min": 1,
+    "max": 5
+  },
+  "cooldown_seconds": {
+    "description": "单用户请求间隔（秒）",
+    "type": "int",
+    "default": 30,
+    "min": 0,
+    "max": 3600
+  }
+}
