@@ -3,12 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pixiv_gallery.config import Settings
-from pixiv_gallery.downloader import ImageDownloader
-from pixiv_gallery.formatting import build_text
-from pixiv_gallery.pixiv_client import PixivAPIError, PixivClient
-from pixiv_gallery.request_parser import parse_pixiv_request
-from pixiv_gallery.service import FeatureDisabledError, PixivService, RequestIntent, SafetyRejectedError
+try:
+    from .pixiv_gallery.config import Settings
+    from .pixiv_gallery.downloader import ImageDownloader
+    from .pixiv_gallery.formatting import build_text
+    from .pixiv_gallery.pixiv_client import PixivAPIError, PixivClient
+    from .pixiv_gallery.request_parser import parse_pixiv_request
+    from .pixiv_gallery.service import FeatureDisabledError, PixivService, RequestIntent, SafetyRejectedError
+except ImportError:
+    from pixiv_gallery.config import Settings
+    from pixiv_gallery.downloader import ImageDownloader
+    from pixiv_gallery.formatting import build_text
+    from pixiv_gallery.pixiv_client import PixivAPIError, PixivClient
+    from pixiv_gallery.request_parser import parse_pixiv_request
+    from pixiv_gallery.service import FeatureDisabledError, PixivService, RequestIntent, SafetyRejectedError
 
 PLUGIN_NAME = "astrbot_plugin_pixiv_gallery"
 
