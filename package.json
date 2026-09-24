@@ -1,0 +1,11 @@
+{
+  "name": "astrbot-pixiv-gallery-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:pages": "node --test tests/page_smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

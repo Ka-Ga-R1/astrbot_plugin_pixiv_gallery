@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 doc_cache/
 *.backup.*
+node_modules/
